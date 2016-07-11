@@ -4,7 +4,11 @@ import lmdb
 import sys
 import os.path
 from caffe.proto.caffe_pb2 import Datum
+import gflags
+import scipy
+FLAGS=gflags.FLAGS
 
+gflags.DEFINE_integer('resize',256,'set the size')
 def load_cifar10(dataset_path):
     """
     loading the cifar10 dataset
@@ -79,8 +83,8 @@ def build_dataset(img_data,label,dataset_path):
     :return:
     """
     data_size=img_data.shape[0]
-    img_width=32
-    img_height=32
+    img_width=FLAGS.resize
+    img_height=FLAGS.resize
     img_channel=3
 
     # reshape to img
@@ -90,13 +94,18 @@ def build_dataset(img_data,label,dataset_path):
     img_data=img_data[:,::-1,:,:]
 
     # open the lmdb
-    map_size=img_data.nbytes*10
+    map_size=img_data.nbytes*10*((FLAGS.resize/32)**2)
     env=lmdb.open(dataset_path,map_size=map_size)
     with env.begin(write=True) as txn:
 
         #txn is a Transaction
         for data_idx in range(data_size):
             img=img_data[data_idx,:,:,:]
+
+            #resize the image
+            resized_image=scipy.misc.imresize(np.rollaxis(img,0,2),(FLAGS.resize,FLAGS.resize,3),'bilinear')
+            img=np.rollaxis(resized_image,2)
+
             if (data_idx+1)%10000==0:
                 print "[msg]%d images have been written" % data_idx
             datum=Datum()
@@ -112,14 +121,20 @@ def build_dataset(img_data,label,dataset_path):
 
 if __name__=='__main__':
 
+    try:
+        argv=FLAGS(sys.argv)
+    except gflags.FlagsError,e:
+        print '%s\nUsage:%s ARGS\n%s' %(e,sys.argv[0],FLAGS)
+        exit(1)
+
     if len(sys.argv)<2:
         print "build the cifar10 lmdb dataset\nUsage:\npython convert_cifar_for_hashing.py "\
-        "path-of-cifar10-batches-py [the-path-of-lmdb]\nNote:remember add the path of pycaffe to the PYTHONPATH "
+        "path-of-cifar10-batches-py [the-path-of-lmdb] \nNote:remember add the path of pycaffe to the PYTHONPATH "
         sys.exit(1)
-    (train_data,train_label,test_data,test_label)= load_cifar10(sys.argv[1])
+    (train_data,train_label,test_data,test_label)= load_cifar10(argv[1])
 
-    if len(sys.argv)==3:
-        base_dir=sys.argv[2]
+    if len(argv)==3:
+        base_dir=argv[2]
     else:
         base_dir=os.getcwd()
 
